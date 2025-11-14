@@ -35,6 +35,8 @@ const (
 	ClientStartTLS
 	// Server will shutdown, client to shutdown on next command turn
 	ClientShutdown
+	// Client is in the middle of an AUTH command
+	ClientAuth
 )
 
 type client struct {
@@ -56,9 +58,11 @@ type client struct {
 	//lint:ignore U1000 unused
 	ar *adjustableLimitedReader
 	// guards access to conn
-	connGuard sync.Mutex
-	log       log.Logger
-	parser    rfc5321.Parser
+	connGuard     sync.Mutex
+	log           log.Logger
+	parser        rfc5321.Parser
+	authenticated bool
+	authMethod    string
 }
 
 // NewClient allocates a new client.
@@ -124,6 +128,7 @@ func (c *client) sendResponse(r ...interface{}) {
 // TLS handshake
 func (c *client) resetTransaction() {
 	c.Envelope.ResetTransaction()
+	c.authenticated = false
 }
 
 // isInTransaction returns true if the connection is inside a transaction.
@@ -178,6 +183,7 @@ func (c *client) init(conn net.Conn, clientID uint64, ep *mail.Pool) {
 	c.errors = 0
 	// borrow an envelope from the envelope pool
 	c.Envelope = ep.Borrow(getRemoteAddr(conn), clientID)
+	c.authenticated = false
 }
 
 // getID returns the client's unique ID

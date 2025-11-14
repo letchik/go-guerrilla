@@ -121,24 +121,29 @@ var (
 type Responses struct {
 
 	// The 500's
-	FailLineTooLong              *Response
-	FailNestedMailCmd            *Response
-	FailNoSenderDataCmd          *Response
-	FailNoRecipientsDataCmd      *Response
-	FailUnrecognizedCmd          *Response
-	FailMaxUnrecognizedCmd       *Response
-	FailSyntaxError              *Response
-	FailReadLimitExceededDataCmd *Response
-	FailMessageSizeExceeded      *Response
-	FailReadErrorDataCmd         *Response
-	FailPathTooLong              *Response
-	FailInvalidAddress           *Response
-	FailLocalPartTooLong         *Response
-	FailDomainTooLong            *Response
-	FailBackendNotRunning        *Response
-	FailBackendTransaction       *Response
-	FailBackendTimeout           *Response
-	FailRcptCmd                  *Response
+	FailLineTooLong               *Response
+	FailNestedMailCmd             *Response
+	FailNoSenderDataCmd           *Response
+	FailNoRecipientsDataCmd       *Response
+	FailUnrecognizedCmd           *Response
+	FailMaxUnrecognizedCmd        *Response
+	FailSyntaxError               *Response
+	FailReadLimitExceededDataCmd  *Response
+	FailMessageSizeExceeded       *Response
+	FailReadErrorDataCmd          *Response
+	FailPathTooLong               *Response
+	FailInvalidAddress            *Response
+	FailLocalPartTooLong          *Response
+	FailDomainTooLong             *Response
+	FailBackendNotRunning         *Response
+	FailBackendTransaction        *Response
+	FailBackendTimeout            *Response
+	FailRcptCmd                   *Response
+	FailAuthNotTls                *Response
+	FailAuthInvalid               *Response
+	FailAuth                      *Response
+	FailAuthMechanismNotSupported *Response
+	FailAuthenticationRequired    *Response
 
 	// The 400's
 	ErrorTooManyRecipients *Response
@@ -155,6 +160,7 @@ type Responses struct {
 	SuccessDataCmd       *Response
 	SuccessStartTLSCmd   *Response
 	SuccessMessageQueued *Response
+	SuccessAuth          *Response
 }
 
 // Called automatically during package load to build up the Responses struct
@@ -359,6 +365,46 @@ func init() {
 		Comment:      "User unknown in local recipient table",
 	}
 
+	Canned.FailAuthNotTls = &Response{
+		EnhancedCode: EncryptionRequired,
+		BasicCode:    538,
+		Class:        ClassPermanentFailure,
+		Comment:      "Encryption required for requested authentication mechanism",
+	}
+
+	Canned.FailAuthInvalid = &Response{
+		EnhancedCode: AuthenticationCredentialsInvalid,
+		BasicCode:    535,
+		Class:        ClassPermanentFailure,
+		Comment:      "Authentication credentials invalid",
+	}
+
+	Canned.SuccessAuth = &Response{
+		EnhancedCode: OtherStatus,
+		BasicCode:    235,
+		Class:        ClassSuccess,
+		Comment:      "Authentication successful",
+	}
+
+	Canned.FailAuth = &Response{
+		EnhancedCode: AuthenticationCredentialsInvalid,
+		BasicCode:    535,
+		Class:        ClassPermanentFailure,
+		Comment:      "Authentication credentials invalid",
+	}
+
+	Canned.FailAuthMechanismNotSupported = &Response{
+		EnhancedCode: AuthenticationMechanismIsTooWeak,
+		BasicCode:    504,
+		Class:        ClassPermanentFailure,
+		Comment:      "Unrecognized authentication type",
+	}
+	Canned.FailAuthenticationRequired = &Response{
+		EnhancedCode: AuthenticationRequired,
+		BasicCode:    530,
+		Class:        ClassPermanentFailure,
+		Comment:      "Authentication required",
+	}
 }
 
 // DefaultMap contains defined default codes (RfC 3463)
@@ -403,6 +449,10 @@ const (
 	ConversionRequiredButNotSupported       = ".6.3"
 	ConversionWithLossPerformed             = ".6.4"
 	ConversionFailed                        = ".6.5"
+	AuthenticationMechanismIsTooWeak        = ".7.2"
+	EncryptionRequired                      = ".7.3"
+	AuthenticationCredentialsInvalid        = ".7.8"
+	AuthenticationRequired                  = ".7.0"
 )
 
 var defaultTexts = struct {

@@ -57,10 +57,11 @@ type server struct {
 	hosts          allowedHosts // stores map[string]bool for faster lookup
 	state          int
 	// If log changed after a config reload, newLogStore stores the value here until it's safe to change it
-	logStore     atomic.Value
-	mainlogStore atomic.Value
-	backendStore atomic.Value
-	envelopePool *mail.Pool
+	logStore      atomic.Value
+	mainlogStore  atomic.Value
+	backendStore  atomic.Value
+	envelopePool  *mail.Pool
+	authenticator *Authenticator
 }
 
 type allowedHosts struct {
@@ -84,6 +85,7 @@ var (
 	cmdQUIT     command = []byte("QUIT")
 	cmdDATA     command = []byte("DATA")
 	cmdSTARTTLS command = []byte("STARTTLS")
+	cmdAUTH     command = []byte("AUTH")
 	// PROXY isn't part of the SMTP protocol; instead, it encapsulates the SMTP conversation.
 	// The conversation is prefixed with a header that always starts with []byte("PROXY "),
 	// so we can reuse the command logic.
@@ -98,13 +100,14 @@ func (c command) match(in []byte) bool {
 }
 
 // Creates and returns a new ready-to-run Server from a ServerConfig configuration
-func newServer(sc *ServerConfig, b backends.Backend, mainlog log.Logger) (*server, error) {
+func newServer(sc *ServerConfig, b backends.Backend, mainlog log.Logger, authenticator *Authenticator) (*server, error) {
 	server := &server{
 		clientPool:      NewPool(sc.MaxClients),
 		closedListener:  make(chan bool, 1),
 		listenInterface: sc.ListenInterface,
 		state:           ServerStateNew,
 		envelopePool:    mail.NewPool(sc.MaxClients),
+		authenticator:   authenticator,
 	}
 	server.mainlogStore.Store(mainlog)
 	server.backendStore.Store(b)
@@ -407,6 +410,10 @@ func (s *server) handleClient(client *client) {
 	pipelining := "250-PIPELINING\r\n"
 	advertiseTLS := "250-STARTTLS\r\n"
 	advertiseEnhancedStatusCodes := "250-ENHANCEDSTATUSCODES\r\n"
+	advertiseAuth := ""
+	if providers := s.authenticator.GetMechanisms(); len(providers) > 0 {
+		advertiseAuth = "250-AUTH " + strings.Join(providers, " ") + "\r\n"
+	}
 	// The last line doesn't need \r\n since string will be printed as a new line.
 	// Also, Last line has no dash -
 	help := "250 HELP"
@@ -575,6 +582,7 @@ func (s *server) handleClient(client *client) {
 					messageSize,
 					pipelining,
 					advertiseTLS,
+					advertiseAuth,
 					advertiseEnhancedStatusCodes,
 					help)
 
@@ -602,6 +610,10 @@ func (s *server) handleClient(client *client) {
 				client.sendResponse(r.SuccessMailCmd)
 
 			case cmdMAIL.match(cmd):
+				if sc.Auth.Enabled && !client.authenticated {
+					client.sendResponse(r.FailAuthenticationRequired)
+					break
+				}
 				if client.isInTransaction() {
 					client.sendResponse(r.FailNestedMailCmd)
 					break
@@ -668,6 +680,20 @@ func (s *server) handleClient(client *client) {
 
 				client.sendResponse(r.SuccessStartTLSCmd)
 				client.state = ClientStartTLS
+
+			case cmdAUTH.match(cmd):
+				if !client.TLS {
+					client.sendResponse(r.FailAuthNotTls)
+					break
+				}
+				if method, err := client.parser.Auth(input[4:]); err == nil {
+					client.state = ClientAuth
+					client.authMethod = method
+				} else {
+					client.sendResponse(r.FailAuth)
+					break
+				}
+				client.sendResponse("334\r\n")
 			default:
 				client.errors++
 				if client.errors >= MaxUnrecognizedCommands {
@@ -730,6 +756,28 @@ func (s *server) handleClient(client *client) {
 			}
 			// change to command state
 			client.state = ClientCmd
+
+		case ClientAuth:
+			client.bufin.setLimit(CommandLineMaxLength)
+			input, err := s.readCommand(client)
+			if err != nil {
+				s.log().WithError(err).Warnf("Read error: %s", client.RemoteIP)
+				client.kill()
+				break
+			}
+			method := client.authMethod
+			credentials := string(input)
+			ok, err := s.authenticator.Authenticate(client, method, credentials)
+			if err != nil || !ok {
+				client.sendResponse(r.FailAuth)
+				s.log().WithError(err).Warnf("Authentication failed: %s", client.RemoteIP)
+			} else {
+				client.authenticated = true
+				client.sendResponse(r.SuccessAuth)
+				s.log().WithError(err).Infof("Authentication successful: %s", client.RemoteIP)
+			}
+			client.state = ClientCmd
+
 		case ClientShutdown:
 			// shutdown state
 			client.sendResponse(r.ErrorShutdown)

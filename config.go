@@ -33,6 +33,16 @@ type AppConfig struct {
 	BackendConfig backends.BackendConfig `json:"backend_config"`
 }
 
+// AuthConfig configures the authentication
+type AuthConfig struct {
+	// Enabled enables SMTP AUTH
+	Enabled bool `json:"enabled,omitempty"`
+	// Plain is a map of username:password for PLAIN authentication
+	Plain map[string]string `json:"plain,omitempty"`
+	// DigestMD5 is a map of username:password for DIGEST-MD5 authentication
+	DigestMD5 map[string]string `json:"digest_md5,omitempty"`
+}
+
 // ServerConfig specifies config options for a single server
 type ServerConfig struct {
 	// TLS Configuration
@@ -62,6 +72,8 @@ type ServerConfig struct {
 	XClientOn bool `json:"xclient_on,omitempty"`
 	// Proxied when using a loadbalancer such as HAProxy, set to true to enable
 	ProxyOn bool `json:"proxyon,omitempty"`
+	// Auth configures the authentication
+	Auth AuthConfig `json:"auth,omitempty"`
 }
 
 type ServerTLSConfig struct {
