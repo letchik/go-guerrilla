@@ -774,7 +774,7 @@ func (s *server) handleClient(client *client) {
 			} else {
 				client.authenticated = true
 				client.sendResponse(r.SuccessAuth)
-				s.log().WithError(err).Infof("Authentication successful: %s", client.RemoteIP)
+				s.log().Infof("Authentication successful: %s", client.RemoteIP)
 			}
 			client.state = ClientCmd
 
